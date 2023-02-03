@@ -19,3 +19,9 @@
 
 # Go workspace file
 go.work
+
+# Downloader config
+config.json
+
+# Downloader output
+*.csv

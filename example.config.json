@@ -1,0 +1,7 @@
+{
+    "token": "",
+    "guildID": "",
+    "outputPath": "out.csv",
+    "concurrentChannels": 3,
+    "omitEmpty": false
+}
