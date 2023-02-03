@@ -15,6 +15,8 @@ var (
 	outFile   *os.File
 	csvWriter *csv.Writer
 	mu        sync.Mutex
+
+	loggerLines []string
 )
 
 type DownloaderConfig struct {
@@ -78,7 +80,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Targeting guild: %s (%d channels)\n", guild.Name, len(channels))
+	logger(fmt.Sprintf("Targeting guild: %s (%d channels)", guild.Name, len(channels)), -1)
 
 	var textChannels []*discordgo.Channel
 Outer:
@@ -102,13 +104,13 @@ Outer:
 	}
 	close(textChannelChannel)
 
-	fmt.Printf("%d text channels\n", len(textChannelChannel))
+	logger(fmt.Sprintf("%d text channels", len(textChannelChannel)), -1)
 
 	var wg sync.WaitGroup
 	wg.Add(config.ConcurrentChannels)
 
 	for i := 0; i < config.ConcurrentChannels; i++ {
-		go channelMessagesWorker(discord, &wg, textChannelChannel)
+		go channelMessagesWorker(discord, &wg, textChannelChannel, i)
 	}
 
 	wg.Wait()
@@ -123,7 +125,7 @@ func writeToCSV(data []string) {
 	csvWriter.Flush()
 }
 
-func channelMessagesWorker(client *discordgo.Session, waitGroup *sync.WaitGroup, textChannels chan *discordgo.Channel) {
+func channelMessagesWorker(client *discordgo.Session, waitGroup *sync.WaitGroup, textChannels chan *discordgo.Channel, id int) {
 	defer waitGroup.Done()
 
 	for channel := range textChannels {
@@ -131,13 +133,13 @@ func channelMessagesWorker(client *discordgo.Session, waitGroup *sync.WaitGroup,
 		beforeID := ""
 		total := 0
 
-		fmt.Printf("Starting download for channel %s (%s)\n", channel.Name, channel.ID)
+		logger(fmt.Sprintf("[Worker %d] Starting download for channel %s (%s)", id, channel.Name, channel.ID), -1)
 		for len(latest) == 100 || len(beforeID) == 0 {
 			var err error
 			latest, err = client.ChannelMessages(channel.ID, 100, beforeID, "", "")
 
 			if err != nil {
-				fmt.Printf("Error while downloading channel %s (%s): %v\n", channel.Name, channel.ID, err)
+				logger(fmt.Sprintf("[Worker %d] Error while downloading channel %s (%s): %v", id, channel.Name, channel.ID, err), -1)
 			}
 
 			for _, message := range latest {
@@ -154,8 +156,32 @@ func channelMessagesWorker(client *discordgo.Session, waitGroup *sync.WaitGroup,
 			beforeID = latest[len(latest)-1].ID
 			total += len(latest)
 
-			// fmt.Printf("Downloaded %d messages (total: %d) from %s (%s) Last message ID: %s\n", len(latest), total, channel.Name, channel.ID, beforeID)
+			logger(fmt.Sprintf("> [Worker %d] Downloaded %d messages (total: %d) from %s (%s) Last message ID: %s", id, len(latest), total, channel.Name, channel.ID, beforeID), id)
 		}
-		fmt.Printf("Downloaded %d messages from %s (%s)\n", total, channel.Name, channel.ID)
+		logger(fmt.Sprintf("[Worker %d] Downloaded %d messages from %s (%s)", id, total, channel.Name, channel.ID), -1)
 	}
+}
+
+func logger(line string, id int) {
+	mu.Lock()
+	defer mu.Unlock()
+	if len(loggerLines) != config.ConcurrentChannels {
+		loggerLines = make([]string, config.ConcurrentChannels)
+		for i := range loggerLines {
+			loggerLines[i] = "<empty string>"
+		}
+	}
+
+	for i := 0; i < config.ConcurrentChannels-1; i++ {
+		fmt.Print("\033[A")
+	}
+	if id < 0 || id >= config.ConcurrentChannels {
+		fmt.Printf("\033[2K\r%s\n", line)
+	} else {
+		loggerLines[id] = line
+	}
+	for i := 0; i < config.ConcurrentChannels-1; i++ {
+		fmt.Printf("\033[2K\r%s\n", loggerLines[i])
+	}
+	fmt.Printf("\033[2K\r%s", loggerLines[len(loggerLines)-1])
 }
