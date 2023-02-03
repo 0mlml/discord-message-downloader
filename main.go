@@ -14,7 +14,8 @@ var (
 	config    DownloaderConfig
 	outFile   *os.File
 	csvWriter *csv.Writer
-	mu        sync.Mutex
+	wmu       sync.Mutex
+	lmu       sync.Mutex
 
 	loggerLines []string
 )
@@ -117,8 +118,8 @@ Outer:
 }
 
 func writeToCSV(data []string) {
-	mu.Lock()
-	defer mu.Unlock()
+	wmu.Lock()
+	defer wmu.Unlock()
 	if err := csvWriter.Write(data); err != nil {
 		panic(fmt.Sprintf("error writing data to csv: %v\n%v\n", err, data))
 	}
@@ -163,8 +164,8 @@ func channelMessagesWorker(client *discordgo.Session, waitGroup *sync.WaitGroup,
 }
 
 func logger(line string, id int) {
-	mu.Lock()
-	defer mu.Unlock()
+	lmu.Lock()
+	defer lmu.Unlock()
 	if len(loggerLines) != config.ConcurrentChannels {
 		loggerLines = make([]string, config.ConcurrentChannels)
 		for i := range loggerLines {
