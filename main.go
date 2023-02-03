@@ -14,6 +14,7 @@ var (
 	config    DownloaderConfig
 	outFile   *os.File
 	csvWriter *csv.Writer
+	mu        sync.Mutex
 )
 
 type DownloaderConfig struct {
@@ -43,6 +44,18 @@ func main() {
 		return
 	}
 
+	outFile, err = os.Create(config.FilePath)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer outFile.Close()
+
+	csvWriter = csv.NewWriter(outFile)
+	csvWriter.Comma = '\u001E'
+
+	writeToCSV([]string{"author", "textContent", "id"})
+
 	discord, err := discordgo.New(fmt.Sprintf("Bot %s", config.Token))
 
 	if err != nil {
@@ -57,7 +70,8 @@ func main() {
 		return
 	}
 
-	channels, err := discord.GuildChannels(config.TargetGuildID)
+	var channels []*discordgo.Channel
+	channels, err = discord.GuildChannels(config.TargetGuildID)
 
 	if err != nil {
 		fmt.Println(err)
@@ -90,18 +104,6 @@ Outer:
 
 	fmt.Printf("%d text channels\n", len(textChannelChannel))
 
-	outFile, err = os.Create(config.FilePath)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	defer outFile.Close()
-
-	csvWriter = csv.NewWriter(outFile)
-	csvWriter.Comma = '\u001E'
-
-	writeToCSV([]string{"author", "textContent", "id"})
-
 	var wg sync.WaitGroup
 	wg.Add(config.ConcurrentChannels)
 
@@ -113,9 +115,10 @@ Outer:
 }
 
 func writeToCSV(data []string) {
+	mu.Lock()
+	defer mu.Unlock()
 	if err := csvWriter.Write(data); err != nil {
-		fmt.Printf("error writing data to csv: %v\n", err)
-		fmt.Printf("%v\n", data)
+		panic(fmt.Sprintf("error writing data to csv: %v\n%v\n", err, data))
 	}
 	csvWriter.Flush()
 }
